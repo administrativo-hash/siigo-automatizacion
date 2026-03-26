@@ -2,23 +2,24 @@
 from flask import Flask, request, jsonify
 from parser_xml import parsear_factura_xml
 import requests
+import re
 
-# 🔹 CONFIG SIIGO (AQUÍ VA)
-SIIGO_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IkM3QzFFQTY5M0FCMDREQTM5RkRBNTc3RDc4NTM0NEYxRkI5MDcwQzhSUzI1NiIsInR5cCI6ImF0K2p3dCIsIng1dCI6Ing4SHFhVHF3VGFPZjJsZDllRk5FOGZ1UWNNZyJ9.eyJuYmYiOjE3NzQ1NTQ3MzIsImV4cCI6MTc3NDY0MTEzMiwiaXNzIjoiaHR0cDovL21zLXNlY3VyaXR5OjUwMDAiLCJhdWQiOiJodHRwOi8vbXMtc2VjdXJpdHk6NTAwMC9yZXNvdXJjZXMiLCJjbGllbnRfaWQiOiJTaWlnb0FQSSIsInN1YiI6IjE3ODU2MDUiLCJhdXRoX3RpbWUiOjE3NzQ1NTQ3MzIsImlkcCI6ImxvY2FsIiwibmFtZSI6ImFkbWluaXN0cmF0aXZvQGNyZXd3ZWxsbmVzcy5jbHViIiwibWFpbF9zaWlnbyI6ImFkbWluaXN0cmF0aXZvQGNyZXd3ZWxsbmVzcy5jbHViIiwiY2xvdWRfdGVuYW50X2NvbXBhbnlfa2V5IjoiQ1JFV1dFTExORVNTQ0xVQlNBUyIsInVzZXJzX2lkIjoiMTA3MiIsInRlbmFudF9pZCI6IjB4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA0MzQyMDYiLCJ1c2VyX2xpY2Vuc2VfdHlwZSI6IjAiLCJwbGFuX3R5cGUiOiIxNCIsInRlbmFudF9zdGF0ZSI6IjEiLCJtdWx0aXRlbmFudF9pZCI6IjQ5MiIsImNvbXBhbmllcyI6IjAiLCJhcGlfc3Vic2NyaXB0aW9uX2tleSI6IjFkYjZhNjY5NDRjNjQ2NmNiZDk3M2E4MWE1YWNmZTdlIiwiYXBpX3VzZXJfY3JlYXRlZF9hdCI6IjE2OTYwMTU0OTUiLCJhY2NvdW50YW50IjoiZmFsc2UiLCJqdGkiOiI3QTEzNkVDN0U0MkUzQjc4NkRFMzNCQTRDNkY4MjVDNiIsImlhdCI6MTc3NDU1NDczMiwic2NvcGUiOlsiU2lpZ29BUEkiXSwiYW1yIjpbImN1c3RvbSJdfQ.gfVWcgLvjhewDPcpGE9T8sCoRTFu3U4iui1TZrwRDy1JbvqncPI6KVqF6VPFIHMPGhOrXc5ftoykPLRDbXcRm0oVa24iu5A0zBjdtQ-YUcnTgDGyb84rKuys-XdYa3fWlPDCkA8RMr-uP3sEMxAaawnyuM1flQjETyY9tvxfcAnxPk3ZzxaE3iemiSMRkAKZPFrTG8kIx9FyxSeu7WqEAJEhvcx68CnkU93HSqyoumysHCs7kSjVev18Q09sGD2bGYaDDXuodSxdv-f8Igk01f2tbhtQKeiAO-MK1f1qNcsyu-wCWl3hPQy8rMUthDqf4BESzuq0Ur_0SAwJvGLAcg"
+# 🔹 CONFIG SIIGO
+SIIGO_TOKEN = "TU_TOKEN_AQUI"
 SIIGO_URL = "https://api.siigo.com/v1/purchases"
 
 HEADERS = {
-    "Authorization": SIIGO_TOKEN,
+    "Authorization": f"Bearer {SIIGO_TOKEN}",
     "Username": "administrativo@crewwellness.club",
     "Content-Type": "application/json",
     "Partner-Id": "CrewWellnessAPI"
 }
+
+# 🔹 FUNCIÓN PRINCIPAL
 def enviar_a_siigo(factura):
-    import re
 
-    # 🔹 EXTRAER PREFIJO Y NÚMERO DESDE XML
+    # 🔹 EXTRAER PREFIJO Y NÚMERO
     numero_raw = factura.get("numero_factura", "")
-
     match = re.match(r"([A-Za-z]*)(\d+)", numero_raw)
 
     if match:
@@ -28,6 +29,12 @@ def enviar_a_siigo(factura):
         prefijo = "FC"
         numero = 1
 
+    # 🔹 TOMAR TOTALES DEL XML (ESTANDAR DIAN)
+    subtotal = factura["totales"]["subtotal"]
+    iva_total = factura["iva_total"]
+    total = factura["totales"]["total_pagar"]
+
+    # 🔹 ARMAR DATA SIIGO (MODELO CONSOLIDADO)
     data = {
         "document": {
             "id": 15481
@@ -45,22 +52,28 @@ def enviar_a_siigo(factura):
         "payments": [
             {
                 "id": 20868,
-                "value": factura["totales"]["total_pagar"],
+                "value": total,
                 "due_date": factura["fecha"]
             }
         ]
     }
 
-    # 🔹 MAPEO DE LÍNEAS
-    for linea in factura["lineas"]:
-        data["items"].append({
-            "code": "72057201",
-            "description": linea["descripcion"],
-            "quantity": linea["cantidad"],
-            "price": linea["precio_unitario"],
-            "type": "Account"
-        })
+    # 🔹 ITEM CONSOLIDADO
+    item = {
+        "code": "72057201",
+        "description": "Compra consolidada",
+        "quantity": 1,
+        "price": subtotal,
+        "type": "Account"
+    }
 
+    # 🔹 IVA
+    if iva_total > 0:
+        item["taxes"] = [{"id": 13156}]
+
+    data["items"] = [item]
+
+    # 🔹 ENVÍO A SIIGO
     response = requests.post(SIIGO_URL, json=data, headers=HEADERS)
 
     print("SIIGO STATUS:", response.status_code)
@@ -69,6 +82,7 @@ def enviar_a_siigo(factura):
     return response.status_code, response.text
 
 
+# 🔹 FLASK
 app = Flask(__name__)
 
 @app.route('/xml', methods=['POST'])
@@ -80,7 +94,6 @@ def recibir_xml():
     try:
         factura = parsear_factura_xml(xml_string)
 
-        # 🔥 AQUÍ SE ENVÍA A SIIGO
         siigo_status, siigo_resp = enviar_a_siigo(factura)
 
         return jsonify({
@@ -91,7 +104,10 @@ def recibir_xml():
 
     except Exception as e:
         print(f"❌ Error procesando {nombre}: {e}")
-        return jsonify({"status": "error", "mensaje": str(e)}), 400
+        return jsonify({
+            "status": "error",
+            "mensaje": str(e)
+        }), 400
 
 
 @app.route('/')
