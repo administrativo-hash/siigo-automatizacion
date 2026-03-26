@@ -13,17 +13,29 @@ HEADERS = {
     "Content-Type": "application/json",
     "Partner-Id": "CrewWellnessAPI"
 }
-
-# 🔹 FUNCIÓN SIIGO
 def enviar_a_siigo(factura):
+    import re
+
+    # 🔹 EXTRAER PREFIJO Y NÚMERO DESDE XML
+    numero_raw = factura.get("numero_factura", "")
+
+    match = re.match(r"([A-Za-z]*)(\d+)", numero_raw)
+
+    if match:
+        prefijo = match.group(1) or "FC"
+        numero = int(match.group(2))
+    else:
+        prefijo = "FC"
+        numero = 1
+
     data = {
         "document": {
             "id": 15481
         },
         "date": factura["fecha"],
         "provider_invoice": {
-            "prefix": "FC",
-            "number": int(factura["numero_factura"]) if factura["numero_factura"].isdigit() else 1
+            "prefix": prefijo,
+            "number": numero
         },
         "supplier": {
             "identification": factura["proveedor"]["nit"]
@@ -39,10 +51,10 @@ def enviar_a_siigo(factura):
         ]
     }
 
-    # 🔥 MAPEO DE LÍNEAS → ACCOUNT
+    # 🔹 MAPEO DE LÍNEAS
     for linea in factura["lineas"]:
         data["items"].append({
-            "code": "72057201",  # cuenta contable
+            "code": "72057201",
             "description": linea["descripcion"],
             "quantity": linea["cantidad"],
             "price": linea["precio_unitario"],
@@ -55,6 +67,7 @@ def enviar_a_siigo(factura):
     print("SIIGO RESP:", response.text)
 
     return response.status_code, response.text
+
 
 app = Flask(__name__)
 
