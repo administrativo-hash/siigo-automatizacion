@@ -69,7 +69,7 @@ def enviar_a_siigo(factura):
 
     # 🔹 IVA
     if iva_total > 0:
-        item["taxes"] = [{"id": 13156}]
+        item["taxes"] = [{"id": 8326}]
 
     data["items"] = [item]
 
