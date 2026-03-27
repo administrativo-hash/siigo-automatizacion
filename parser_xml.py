@@ -1,5 +1,4 @@
 # parser_xml.py
-import re
 import xml.etree.ElementTree as ET
 
 NS = {
@@ -7,65 +6,89 @@ NS = {
     'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2',
 }
 
-def parsear_factura_xml(xml_string: str) -> dict:
-    """
-    Recibe el contenido XML como string (AttachedDocument colombiano UBL 2.1).
-    Retorna un dict con todos los datos necesarios para SIIGO.
-    """
-    # PASO 1: Extraer Invoice del CDATA
-    cdata_match = re.search(r'<!\[CDATA\[(.*?)\]\]>', xml_string, re.DOTALL)
-    if not cdata_match:
-        raise ValueError("No se encontró CDATA con Invoice embebida")
-    
-    invoice_xml = cdata_match.group(1)
-    root = ET.fromstring(invoice_xml)
 
-    def txt(element, path):
-        return element.findtext(path, namespaces=NS)
+def extraer_valor(root, paths):
+    for path in paths:
+        elemento = root.find(path, NS)
+        if elemento is not None and elemento.text:
+            try:
+                return float(elemento.text)
+            except:
+                continue
+    return 0
 
-    # PASO 2: Extraer encabezado
-    numero = txt(root, './/cbc:ID')
-    fecha = txt(root, './/cbc:IssueDate')
-    tipo = txt(root, './/cbc:InvoiceTypeCode')  # "01" = factura venta
 
-    # PASO 3: Proveedor
-    sup = root.find('.//cac:AccountingSupplierParty', NS)
-    proveedor = {
-        "nit": txt(sup, './/cbc:CompanyID'),
-        "nombre": txt(sup, './/cbc:RegistrationName'),
-    }
+def extraer_totales(root):
 
-    # PASO 4: Totales
-    mon = root.find('.//cac:LegalMonetaryTotal', NS)
-    totales = {
-        "subtotal": float(txt(mon, 'cbc:LineExtensionAmount') or 0),
-        "total_con_iva": float(txt(mon, 'cbc:TaxInclusiveAmount') or 0),
-        "total_pagar": float(txt(mon, 'cbc:PayableAmount') or 0),
-    }
+    subtotal = extraer_valor(root, [
+        ".//cac:LegalMonetaryTotal/cbc:LineExtensionAmount",
+        ".//cbc:LineExtensionAmount"
+    ])
 
-    # PASO 5: IVA total (solo el primer TaxTotal = total factura)
-    primer_tax = root.find('.//cac:TaxTotal', NS)
-    iva_total = float(txt(primer_tax, 'cbc:TaxAmount') or 0) if primer_tax is not None else 0
+    total = extraer_valor(root, [
+        ".//cac:LegalMonetaryTotal/cbc:PayableAmount",
+        ".//cbc:PayableAmount"
+    ])
 
-    # PASO 6: Líneas
-    lineas = []
-    for line in root.findall('.//cac:InvoiceLine', NS):
-        lineas.append({
-            "id": txt(line, 'cbc:ID'),
-            "descripcion": txt(line, './/cbc:Description'),
-            "cantidad": float(txt(line, 'cbc:InvoicedQuantity') or 0),
-            "precio_unitario": float(txt(line, './/cbc:PriceAmount') or 0),
-            "subtotal_linea": float(txt(line, 'cbc:LineExtensionAmount') or 0),
-            "iva_pct": float(txt(line, './/cbc:Percent') or 0),
-            "iva_valor": float(txt(line, './/cbc:TaxAmount') or 0),
-        })
+    iva_total = extraer_valor(root, [
+        ".//cac:TaxTotal/cbc:TaxAmount",
+        ".//cbc:TaxAmount"
+    ])
 
-    return {
-        "numero_factura": numero,
+    # 🔹 Fallback contable
+    if subtotal == 0 and total > 0 and iva_total > 0:
+        subtotal = total - iva_total
+
+    if total == 0 and subtotal > 0:
+        total = subtotal + iva_total
+
+    return round(subtotal, 2), round(iva_total, 2), round(total, 2)
+
+
+def parsear_factura_xml(xml_string):
+
+    root = ET.fromstring(xml_string)
+
+    # 🔹 TOTALES
+    subtotal, iva_total, total = extraer_totales(root)
+
+    # 🔹 NÚMERO FACTURA
+    numero = root.find(".//cbc:ID", NS)
+    numero_factura = numero.text if numero is not None else "1"
+
+    # 🔹 FECHA
+    fecha = root.find(".//cbc:IssueDate", NS)
+    fecha = fecha.text if fecha is not None else "2026-01-01"
+
+    # 🔹 PROVEEDOR NIT
+    nit = root.find(".//cac:AccountingSupplierParty//cbc:CompanyID", NS)
+    nit = nit.text if nit is not None else "000000000"
+
+    # 🔹 NOMBRE PROVEEDOR
+    nombre = root.find(".//cac:AccountingSupplierParty//cbc:RegistrationName", NS)
+    nombre = nombre.text if nombre is not None else "PROVEEDOR"
+
+    factura = {
         "fecha": fecha,
-        "tipo_documento": tipo,
-        "proveedor": proveedor,
-        "totales": totales,
-        "iva_total": iva_total,
-        "lineas": lineas,
+        "numero_factura": numero_factura,
+        "proveedor": {
+            "nit": nit,
+            "nombre": nombre
+        },
+        "totales": {
+            "subtotal": subtotal,
+            "total_pagar": total
+        },
+        "iva_total": iva_total
     }
+
+    # 🔍 DEBUG (recomendado dejarlo temporal)
+    print("---- PARSER ----")
+    print("NIT:", nit)
+    print("PROVEEDOR:", nombre)
+    print("FACTURA:", numero_factura)
+    print("SUBTOTAL:", subtotal)
+    print("IVA:", iva_total)
+    print("TOTAL:", total)
+
+    return factura
