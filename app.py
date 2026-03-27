@@ -30,9 +30,11 @@ def enviar_a_siigo(factura):
         numero = 1
 
     # 🔹 TOMAR TOTALES DEL XML (ESTANDAR DIAN)
-    subtotal = factura["totales"]["subtotal"]
-    iva_total = factura["iva_total"]
-    total = factura["totales"]["total_pagar"]
+    subtotal = round(factura["totales"]["subtotal"], 2)
+    iva_total = round(factura["iva_total"], 2)
+    total = round(subtotal + iva_total, 2)
+    data["payments"][0]["value"] = float(f"{total:.2f}")
+    
 
     # 🔹 ARMAR DATA SIIGO (MODELO CONSOLIDADO)
     data = {
@@ -63,7 +65,7 @@ def enviar_a_siigo(factura):
         "code": "72057201",
         "description": "Compra consolidada",
         "quantity": 1,
-        "price": subtotal,
+        "price": round(subtotal, 2),
         "type": "Account"
     }
 
