@@ -1,4 +1,4 @@
-# 🔹 IMPORTS
+# 🔹 IMPORTS 
 from flask import Flask, request, jsonify
 from parser_xml import parsear_factura_xml
 import requests
@@ -29,14 +29,13 @@ def enviar_a_siigo(factura):
         prefijo = "FC"
         numero = 1
 
-    # 🔹 TOMAR TOTALES DEL XML (ESTANDAR DIAN)
+    # 🔹 TOTALES
     subtotal = round(factura["totales"]["subtotal"], 2)
     iva_total = round(factura["iva_total"], 2)
     total = round(subtotal + iva_total, 2)
-    data["payments"][0]["value"] = float(f"{total:.2f}")
-    
+    total = float(f"{total:.2f}")
 
-    # 🔹 ARMAR DATA SIIGO (MODELO CONSOLIDADO)
+    # 🔹 ARMAR DATA SIIGO
     data = {
         "document": {
             "id": 15481
@@ -65,7 +64,7 @@ def enviar_a_siigo(factura):
         "code": "72057201",
         "description": "Compra consolidada",
         "quantity": 1,
-        "price": round(subtotal, 2),
+        "price": subtotal,
         "type": "Account"
     }
 
@@ -75,7 +74,7 @@ def enviar_a_siigo(factura):
 
     data["items"] = [item]
 
-    # 🔹 ENVÍO A SIIGO
+    # 🔹 ENVÍO
     response = requests.post(SIIGO_URL, json=data, headers=HEADERS)
 
     print("SIIGO STATUS:", response.status_code)
@@ -119,5 +118,3 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-    print("CAMBIO PRUEBA 123")
