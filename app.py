@@ -9,17 +9,17 @@ import os
 # 🔹 CONFIG SIIGO
 SIIGO_URL = "https://api.siigo.com/v1/purchases"
 SIIGO_USERNAME = os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.club")
-SIIGO_ACCESS_KEY = os.environ.get("SIIGO_ACCES_KEY", "")  # ✅ nunca hardcodear
+SIIGO_ACCESS_KEY = os.environ.get("SIIGO_ACCESS_KEY", "")  # ✅ nunca hardcodear
 
 def obtener_token():
     url = "https://api.siigo.com/auth"
     payload = {
-        "username": os.environ.get("SIIGO_USERNAME", ""),
-        "access_key": os.environ.get("SIIGO_ACCES_KEY", "")
-    }
+    "username": SIIGO_USERNAME,
+    "access_key": SIIGO_ACCESS_KEY
+}
     response = requests.post(url, json=payload)
     print("AUTH STATUS:", response.status_code)
-    print("ACCESS_KEY LEÍDA:", os.environ.get("SIIGO_ACCES_KEY", "❌ VACÍA")[:10])
+    print("ACCESS_KEY LEÍDA:", os.environ.get("SIIGO_ACCESS_KEY", "❌ VACÍA")[:10])
     response.raise_for_status()
     return response.json().get("access_token")
     
