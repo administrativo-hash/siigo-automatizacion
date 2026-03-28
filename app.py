@@ -16,36 +16,38 @@ HEADERS = {
     "Partner-Id": "CrewWellnessAPI"
 }
 
-# 🔹 FUNCIÓN: calcular payment correcto desde XML
-def calcular_payment_desde_xml(xml_string):
+# 🔹 EXTRAER NIT DESDE XML (SIN DV)
+def obtener_nit_desde_xml(xml_string):
     ns = {
         'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
         'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
     }
 
-    root = ET.fromstring(xml_string)
+    root = ET.fromstring(xml_string.strip())
 
-    # XML interno (Invoice)
-    description = root.find('.//cac:Attachment/cac:ExternalReference/cbc:Description', ns).text
-    invoice_root = ET.fromstring(description)
+    desc = root.find('.//cac:Attachment/cac:ExternalReference/cbc:Description', ns)
 
-    # PayableAmount
-    payable = float(invoice_root.find('.//cac:LegalMonetaryTotal/cbc:PayableAmount', ns).text)
+    if desc is not None and desc.text:
+        invoice_root = ET.fromstring(desc.text.strip())
+    else:
+        invoice_root = root
 
-    # Retenciones
-    withholding_node = invoice_root.find('.//cac:WithholdingTaxTotal/cbc:TaxAmount', ns)
-    retenciones = float(withholding_node.text) if withholding_node is not None else 0.0
+    nit_raw = invoice_root.find(
+        './/cac:AccountingSupplierParty//cbc:CompanyID', ns
+    ).text.strip()
 
-    payment = payable - retenciones
+    # 🔥 quitar DV y dejar solo números
+    nit_limpio = re.sub(r'\D', '', nit_raw.split('-')[0])
 
-    return round(payment, 2)
+    return nit_limpio
 
-# 🔹 FUNCIÓN: enviar a Siigo
+# 🔹 FUNCIÓN PRINCIPAL
 def enviar_a_siigo(factura, xml_string):
 
+    # 🔹 NIT REAL
     nit_real = obtener_nit_desde_xml(xml_string)
-    print("DEBUG → NIT REAL:", nit_real)
 
+    # 🔹 PREFIJO Y NÚMERO
     numero_raw = factura.get("numero_factura", "")
     match = re.match(r"([A-Za-z]*)(\d+)", numero_raw)
 
@@ -56,14 +58,21 @@ def enviar_a_siigo(factura, xml_string):
         prefijo = "FC"
         numero = 1
 
+    # 🔹 VALORES DESDE PARSER (SIN DUPLICAR LÓGICA)
     subtotal = round(factura["totales"]["subtotal"], 2)
     iva_total = round(factura["iva_total"], 2)
+    total = round(factura["totales"]["total_pagar"], 2)
 
-    total = round(subtotal + iva_total, 2)
-    total = float(f"{total:.2f}")
+    # 🔹 PAYMENT (RESTA RETENCIONES YA INCLUIDAS EN TOTAL)
+    # 👉 aquí NO recalculamos XML, usamos lo que ya trae parser
+    payment_correcto = total
 
-    # ✅ cálculo correcto del pago
-    payment_correcto = calcular_payment_desde_xml(xml_string)
+    # 🔹 DEBUG OBLIGATORIO
+    print("DEBUG → NIT:", nit_real)
+    print("DEBUG → SUBTOTAL (base):", subtotal)
+    print("DEBUG → IVA XML:", iva_total)
+    print("DEBUG → TOTAL:", total)
+    print("DEBUG → PAYMENT:", payment_correcto)
 
     data = {
         "document": {
@@ -75,8 +84,7 @@ def enviar_a_siigo(factura, xml_string):
             "number": numero
         },
         "supplier": {
-            
-        "identification": nit_real
+            "identification": nit_real
         },
         "cost_center": 1132,
         "items": [
@@ -84,8 +92,13 @@ def enviar_a_siigo(factura, xml_string):
                 "code": "72057201",
                 "description": "Compra consolidada",
                 "quantity": 1,
-                "price": total,
-                "type": "Account"
+                "price": subtotal,  # ✅ BASE SIN IVA
+                "type": "Account",
+                **(
+                    {
+                        "taxes": [{"id": 8326}]  # ⚠️ validar en tu SIIGO
+                    } if iva_total > 0 else {}
+                )
             }
         ],
         "payments": [
@@ -96,13 +109,6 @@ def enviar_a_siigo(factura, xml_string):
         ]
     }
 
-    # 🔍 DEBUG
-    print("DEBUG → SUBTOTAL:", subtotal)
-    print("DEBUG → IVA:", iva_total)
-    print("DEBUG → TOTAL:", total)
-    print("DEBUG → PAYMENT:", payment_correcto)
-    print("DEBUG → NIT proveedor:", factura["proveedor"]["nit"])
-
     response = requests.post(SIIGO_URL, json=data, headers=HEADERS)
 
     print("SIIGO STATUS:", response.status_code)
@@ -110,19 +116,21 @@ def enviar_a_siigo(factura, xml_string):
 
     return response.status_code, response.text
 
-# 🔹 APP FLASK
+
+# 🔹 FLASK
 app = Flask(__name__)
 
 @app.route('/xml', methods=['POST'])
 def recibir_xml():
     data = request.json
     nombre = data.get("nombre", "sin_nombre")
+
+    # 🔥 limpiar XML
     xml_string = data.get("xml", "").strip()
 
     try:
         factura = parsear_factura_xml(xml_string)
 
-        # ✅ se pasa xml_string correctamente
         siigo_status, siigo_resp = enviar_a_siigo(factura, xml_string)
 
         return jsonify({
@@ -138,33 +146,11 @@ def recibir_xml():
             "mensaje": str(e)
         }), 400
 
+
 @app.route('/')
 def home():
     return "OK"
 
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-print("TOKEN:", SIIGO_TOKEN[:20])
-
-def obtener_nit_desde_xml(xml_string):
-    import xml.etree.ElementTree as ET
-
-    ns = {
-        'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
-        'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
-    }
-
-    root = ET.fromstring(xml_string)
-
-    # Extraer XML interno (Invoice)
-    description = root.find('.//cac:Attachment/cac:ExternalReference/cbc:Description', ns).text
-    invoice_root = ET.fromstring(description)
-
-    # Extraer NIT proveedor
-    nit = invoice_root.find(
-        './/cac:AccountingSupplierParty//cbc:CompanyID',
-        ns
-    ).text
-
-    return nit.strip()

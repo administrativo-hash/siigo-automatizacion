@@ -1,94 +1,111 @@
-# parser_xml.py
 import xml.etree.ElementTree as ET
+import re
 
 NS = {
     'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
     'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2',
 }
 
+def limpiar_xml(texto):
+    return texto.strip().replace('<?xml version="1.0" encoding="UTF-8"?>', '').strip()
+
+def extraer_xml_interno(xml_string):
+    root = ET.fromstring(xml_string.strip())
+
+    desc = root.find(
+        './/cac:Attachment/cac:ExternalReference/cbc:Description', NS
+    )
+
+    if desc is not None and desc.text:
+        xml_limpio = limpiar_xml(desc.text)
+        return ET.fromstring(xml_limpio), root
+
+    return root, root
 
 def extraer_valor(root, paths):
     for path in paths:
-        elemento = root.find(path, NS)
-        if elemento is not None and elemento.text:
+        el = root.find(path, NS)
+        if el is not None and el.text:
             try:
-                return float(elemento.text)
+                return float(el.text)
             except:
                 continue
     return 0
 
+def extraer_iva_real(invoice_root):
+    total_iva = 0
 
-def extraer_totales(root):
+    for tax_total in invoice_root.findall(".//cac:TaxTotal", NS):
+        percent = tax_total.find(".//cbc:Percent", NS)
+        tax_amount = tax_total.find(".//cbc:TaxAmount", NS)
 
-    subtotal = extraer_valor(root, [
-        ".//cac:LegalMonetaryTotal/cbc:LineExtensionAmount",
-        ".//cbc:LineExtensionAmount"
+        if percent is not None and tax_amount is not None:
+            try:
+                pct = float(percent.text)
+                if pct in [19, 5]:  # SOLO IVA válido
+                    total_iva += float(tax_amount.text)
+            except:
+                continue
+
+    return round(total_iva, 2)
+
+def extraer_totales(invoice_root):
+    subtotal = extraer_valor(invoice_root, [
+        ".//cac:LegalMonetaryTotal/cbc:LineExtensionAmount"
     ])
 
-    total = extraer_valor(root, [
-        ".//cac:LegalMonetaryTotal/cbc:PayableAmount",
-        ".//cbc:PayableAmount"
+    total = extraer_valor(invoice_root, [
+        ".//cac:LegalMonetaryTotal/cbc:PayableAmount"
     ])
 
-    iva_total = extraer_valor(root, [
-        ".//cac:TaxTotal/cbc:TaxAmount",
-        ".//cbc:TaxAmount"
-    ])
+    iva_total = extraer_iva_real(invoice_root)
 
-    # 🔹 Fallback contable
     if subtotal == 0 and total > 0 and iva_total > 0:
-        subtotal = total - iva_total
+        subtotal = round(total - iva_total, 2)
 
     if total == 0 and subtotal > 0:
         total = subtotal + iva_total
 
-    return round(subtotal, 2), round(iva_total, 2), round(total, 2)
-
+    return round(subtotal,2), round(iva_total,2), round(total,2)
 
 def parsear_factura_xml(xml_string):
 
-    root = ET.fromstring(xml_string)
+    invoice_root, _ = extraer_xml_interno(xml_string)
 
-    # 🔹 TOTALES
-    subtotal, iva_total, total = extraer_totales(root)
+    subtotal, iva_total, total = extraer_totales(invoice_root)
 
-    # 🔹 NÚMERO FACTURA
-    numero = root.find(".//cbc:ID", NS)
-    numero_factura = numero.text if numero is not None else "1"
+    numero = invoice_root.find(".//cbc:ID", NS)
+    numero_factura = numero.text.strip() if numero is not None else "1"
 
-    # 🔹 FECHA
-    fecha = root.find(".//cbc:IssueDate", NS)
+    fecha = invoice_root.find(".//cbc:IssueDate", NS)
     fecha = fecha.text if fecha is not None else "2026-01-01"
 
-    # 🔹 PROVEEDOR NIT
-    nit = root.find(".//cac:AccountingSupplierParty//cbc:CompanyID", NS)
-    nit = nit.text if nit is not None else "000000000"
+    nit_raw = invoice_root.find(
+        ".//cac:AccountingSupplierParty//cbc:CompanyID", NS
+    )
 
-    # 🔹 NOMBRE PROVEEDOR
-    nombre = root.find(".//cac:AccountingSupplierParty//cbc:RegistrationName", NS)
-    nombre = nombre.text if nombre is not None else "PROVEEDOR"
+    nit_raw = nit_raw.text.strip() if nit_raw is not None else "000000000"
 
-    factura = {
-        "fecha": fecha,
-        "numero_factura": numero_factura,
-        "proveedor": {
-            "nit": nit,
-            "nombre": nombre
-        },
-        "totales": {
-            "subtotal": subtotal,
-            "total_pagar": total
-        },
-        "iva_total": iva_total
-    }
+    # 🔥 limpiar DV
+    nit = re.sub(r'\D', '', nit_raw.split('-')[0])
 
-    # 🔍 DEBUG (recomendado dejarlo temporal)
+    nombre = invoice_root.find(
+        ".//cac:AccountingSupplierParty//cbc:RegistrationName", NS
+    )
+    nombre = nombre.text.strip() if nombre is not None else "PROVEEDOR"
+
     print("---- PARSER ----")
-    print("NIT:", nit)
+    print("NIT limpio:", nit)
     print("PROVEEDOR:", nombre)
     print("FACTURA:", numero_factura)
     print("SUBTOTAL:", subtotal)
     print("IVA:", iva_total)
     print("TOTAL:", total)
 
-    return factura
+    return {
+        "fecha": fecha,
+        "numero_factura": numero_factura,
+        "proveedor": {"nit": nit, "nombre": nombre},
+        "totales": {"subtotal": subtotal, "total_pagar": total},
+        "iva_total": iva_total
+    }
