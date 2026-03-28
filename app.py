@@ -9,7 +9,7 @@ import os
 # 🔹 CONFIG SIIGO
 SIIGO_URL = "https://api.siigo.com/v1/purchases"
 SIIGO_USERNAME = os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.club")
-SIIGO_ACCESS_KEY = os.environ.get("ODZiYzA2MjEtZjc3Mi00Yzk3LTliODItMjE5YTU0ZDM0NDFhOipoSjI2Kjd5VFI=", "")  # ✅ nunca hardcodear
+SIIGO_ACCESS_KEY = os.environ.get("OTU2Zjg1MDEtZjIwYy00MTEyLWE2ZDQtOWUyN2Q2MWJiOTAxOngtazNyLkoxPFM=", "")  # ✅ nunca hardcodear
 
 def obtener_token():
     url = "https://api.siigo.com/auth"
