@@ -10,15 +10,21 @@ def limpiar_xml(texto):
     return texto.strip().replace('<?xml version="1.0" encoding="UTF-8"?>', '').strip()
 
 def extraer_xml_interno(xml_string):
-    root = ET.fromstring(xml_string.strip())
+    root = ET.fromstring(xml_string.strip().lstrip('\ufeff'))
 
     desc = root.find(
         './/cac:Attachment/cac:ExternalReference/cbc:Description', NS
     )
 
     if desc is not None and desc.text:
-        xml_limpio = limpiar_xml(desc.text)
-        return ET.fromstring(xml_limpio), root
+        xml_limpio = desc.text.strip().lstrip('\ufeff')
+
+        try:
+            return ET.fromstring(xml_limpio), root
+        except Exception as e:
+            print("❌ Error parseando XML interno:", e)
+            print("Contenido problemático:", xml_limpio[:200])
+            raise
 
     return root, root
 
