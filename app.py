@@ -12,12 +12,19 @@ SIIGO_USERNAME = os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.c
 SIIGO_ACCESS_KEY = os.environ.get("OTU2Zjg1MDEtZjIwYy00MTEyLWE2ZDQtOWUyN2Q2MWJiOTAxOngtazNyLkoxPFM=", "")  # ✅ nunca hardcodear
 
 def obtener_token():
-    url = "https://api.siigo.com/auth" 
+    url = "https://api.siigo.com/auth"
     payload = {
         "username": SIIGO_USERNAME,
         "access_key": SIIGO_ACCESS_KEY
     }
     response = requests.post(url, json=payload)
+    
+    # DEBUG TEMPORAL
+    print("AUTH STATUS:", response.status_code)
+    print("AUTH BODY:", response.text)
+    print("ACCESS_KEY LEÍDA:", SIIGO_ACCESS_KEY[:10] if SIIGO_ACCESS_KEY else "❌ VACÍA")
+    print("USERNAME LEÍDO:", SIIGO_USERNAME)
+    
     response.raise_for_status()
     token = response.json().get("access_token")
     if not token:
