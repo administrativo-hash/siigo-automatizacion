@@ -43,6 +43,9 @@ def calcular_payment_desde_xml(xml_string):
 # 🔹 FUNCIÓN: enviar a Siigo
 def enviar_a_siigo(factura, xml_string):
 
+    nit_real = obtener_nit_desde_xml(xml_string)
+    print("DEBUG → NIT REAL:", nit_real)
+
     numero_raw = factura.get("numero_factura", "")
     match = re.match(r"([A-Za-z]*)(\d+)", numero_raw)
 
@@ -72,7 +75,8 @@ def enviar_a_siigo(factura, xml_string):
             "number": numero
         },
         "supplier": {
-            "identification": factura["proveedor"]["nit"]
+            
+        "identification": nit_real
         },
         "cost_center": 1132,
         "items": [
@@ -97,6 +101,7 @@ def enviar_a_siigo(factura, xml_string):
     print("DEBUG → IVA:", iva_total)
     print("DEBUG → TOTAL:", total)
     print("DEBUG → PAYMENT:", payment_correcto)
+    print("DEBUG → NIT proveedor:", factura["proveedor"]["nit"])
 
     response = requests.post(SIIGO_URL, json=data, headers=HEADERS)
 
@@ -112,7 +117,7 @@ app = Flask(__name__)
 def recibir_xml():
     data = request.json
     nombre = data.get("nombre", "sin_nombre")
-    xml_string = data.get("xml", "")
+    xml_string = data.get("xml", "").strip()
 
     try:
         factura = parsear_factura_xml(xml_string)
@@ -141,3 +146,25 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
 
 print("TOKEN:", SIIGO_TOKEN[:20])
+
+def obtener_nit_desde_xml(xml_string):
+    import xml.etree.ElementTree as ET
+
+    ns = {
+        'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
+        'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+    }
+
+    root = ET.fromstring(xml_string)
+
+    # Extraer XML interno (Invoice)
+    description = root.find('.//cac:Attachment/cac:ExternalReference/cbc:Description', ns).text
+    invoice_root = ET.fromstring(description)
+
+    # Extraer NIT proveedor
+    nit = invoice_root.find(
+        './/cac:AccountingSupplierParty//cbc:CompanyID',
+        ns
+    ).text
+
+    return nit.strip()
