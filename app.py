@@ -12,7 +12,7 @@ SIIGO_USERNAME = os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.c
 SIIGO_ACCESS_KEY = os.environ.get("OTU2Zjg1MDEtZjIwYy00MTEyLWE2ZDQtOWUyN2Q2MWJiOTAxOngtazNyLkoxPFM=", "")  # ✅ nunca hardcodear
 
 def obtener_token():
-    url = "https://api.siigo.com/auth"
+    url = "https://api.siigo.com/auth" 
     payload = {
         "username": SIIGO_USERNAME,
         "access_key": SIIGO_ACCESS_KEY
@@ -151,3 +151,10 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
+@app.route('/debug-env')
+def debug_env():
+    return jsonify({
+        "SIIGO_ACCESS_KEY": os.environ.get("SIIGO_ACCESS_KEY", "❌ NO ENCONTRADA"),
+        "SIIGO_USERNAME": os.environ.get("SIIGO_USERNAME", "❌ NO ENCONTRADA")
+    })
