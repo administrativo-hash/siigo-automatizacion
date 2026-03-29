@@ -71,6 +71,36 @@ def extraer_totales(invoice_root):
 
     return round(subtotal, 2), round(iva_total, 2), round(total, 2)
 
+def extraer_id_type(invoice_root):
+
+    node = invoice_root.find(
+        ".//cac:AccountingSupplierParty//cac:PartyTaxScheme//cbc:CompanyID",
+        NS
+    )
+
+    if node is not None:
+        scheme_name = node.attrib.get("schemeName")
+
+        if scheme_name:
+            return scheme_name.strip()
+
+    # 🔁 fallback (por si el XML no trae schemeName)
+    nit_node = invoice_root.find(
+        ".//cac:AccountingSupplierParty//cbc:CompanyID",
+        NS
+    )
+
+    if nit_node is not None and nit_node.text:
+        nit = nit_node.text.split("-")[0]
+        nit = re.sub(r'\D', '', nit)
+
+        if len(nit) == 9:
+            return "31"
+        else:
+            return "13"
+
+    return "13"
+
 def parsear_factura_xml(xml_string):
     invoice_root, _ = extraer_xml_interno(xml_string)
 
@@ -90,8 +120,11 @@ def parsear_factura_xml(xml_string):
     nombre = invoice_root.find(".//cac:AccountingSupplierParty//cbc:RegistrationName", NS)
     nombre = nombre.text.strip() if nombre is not None else "PROVEEDOR"
 
+    id_type = extraer_id_type(invoice_root).strip()
+
     print("---- PARSER ----")
     print("NIT limpio:", nit)
+    print("ID TYPE DETECTADO:", id_type)
     print("PROVEEDOR:", nombre)
     print("FACTURA:", numero_factura)
     print("SUBTOTAL:", subtotal)
@@ -102,7 +135,7 @@ def parsear_factura_xml(xml_string):
     return {
         "fecha": fecha,
         "numero_factura": numero_factura,
-        "proveedor": {"nit": nit, "nombre": nombre},
+        "proveedor": {"nit": nit, "nombre": nombre, "id_type": id_type },
         "totales": {"subtotal": subtotal, "total_pagar": total},
         "iva_total": iva_total,
         "base": bases
