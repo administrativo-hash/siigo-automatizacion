@@ -59,7 +59,7 @@ def crear_proveedor_en_siigo(factura, nit_real, headers):
     nombre = factura["proveedor"]["nombre"]
     
     # Lógica DIAN: NIT empresa = 9 dígitos (Tipo 31). Cédula > 9 (Tipo 13).
-    es_empresa = len(nit_real) = 9
+    es_empresa = len(nit_real) == 9
     person_type = "Company" if es_empresa else "Person"
     id_type_code = "31" if es_empresa else "13"
 
