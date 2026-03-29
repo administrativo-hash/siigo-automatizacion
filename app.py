@@ -64,7 +64,7 @@ def crear_proveedor_en_siigo(factura, nit_real, headers):
     id_type_code = 31 if es_empresa else 13
     
     # ⚠️ IMPORTANTE: Siigo Customers suele esperar el ID como ENTERO en v1
-    id_type_code = 31 if es_empresa else 13 
+    id_type_code = "31" if es_empresa else "13"
 
     payload = {
         "type": "Supplier",
