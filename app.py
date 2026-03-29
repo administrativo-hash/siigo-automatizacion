@@ -68,7 +68,7 @@ def crear_proveedor_en_siigo(factura, nit_real, headers):
     payload = {
         "type": "Supplier",
         "person_type": person_type,
-        "id_type": id_type_code, # 👈 Enviado como entero
+        "id_type": { "code": str(id_type_code) },
         "identification": str(nit_real),
         "name": [nombre],
         "address": {
