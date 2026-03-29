@@ -55,29 +55,35 @@ def construir_headers():
 # ==========================================
 
 def crear_proveedor_en_siigo(factura, nit_real, headers):
-    """ Crea el proveedor si no existe, detectando si es Persona o Empresa. """
+    """ Crea el proveedor con la estructura exacta de Siigo v1 Customers """
     nombre = factura["proveedor"]["nombre"]
     
-    # Lógica DIAN: NIT empresa = 9 dígitos (Tipo 31). Cédula > 9 (Tipo 13).
-    es_empresa = len(nit_real) == 9
+    # Determinamos el código según longitud
+    es_empresa = len(nit_real) == 9 
     person_type = "Company" if es_empresa else "Person"
-    id_type_code = "31" if es_empresa else "13"
+    
+    # ⚠️ IMPORTANTE: Siigo Customers suele esperar el ID como ENTERO en v1
+    id_type_code = 31 if es_empresa else 13 
 
     payload = {
         "type": "Supplier",
         "person_type": person_type,
-        "id_type": {"code": id_type_code},
-        "identification": nit_real,
+        "id_type": id_type_code, # 👈 Enviado como entero
+        "identification": str(nit_real),
         "name": [nombre],
         "address": {
             "address": "No informado",
-            "city": {"country_code": "Co", "state_code": "11", "city_code": "11001"}
+            "city": {
+                "country_code": "Co",
+                "state_code": "11",
+                "city_code": "11001"
+            }
         },
         "phones": [{"number": "0000000"}],
         "contacts": [{
             "first_name": nombre,
-            "last_name": "Procesado API",
-            "email": "sin-email@crewwellness.club",
+            "last_name": "API",
+            "email": "administrativo@crewwellness.club",
             "phone": {"number": "0000000"}
         }],
         "fiscal_responsibilities": [{"code": "R-99-PN"}],
@@ -85,14 +91,19 @@ def crear_proveedor_en_siigo(factura, nit_real, headers):
     }
 
     try:
-        res = requests.post(SIIGO_URL_CUSTOMERS, json=payload, headers=headers, timeout=15)
+        # Usamos la URL de Customers
+        url_customers = "https://api.siigo.com/v1/customers"
+        res = requests.post(url_customers, json=payload, headers=headers, timeout=15)
+        
         if res.status_code in [200, 201]:
-            print(f"✅ Proveedor {nit_real} ({nombre}) creado exitosamente.")
+            print(f"✅ ÉXITO: Proveedor {nit_real} creado.")
             return True
-        print(f"❌ Error al crear proveedor {nit_real}: {res.text}")
-        return False
+        else:
+            # Imprimimos el error exacto para depurar si persiste
+            print(f"❌ ERROR SIIGO ({res.status_code}): {res.text}")
+            return False
     except Exception as e:
-        print(f"❌ Excepción en creación de proveedor: {e}")
+        print(f"❌ EXCEPCIÓN: {e}")
         return False
 
 # ==========================================
