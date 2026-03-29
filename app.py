@@ -12,12 +12,11 @@ SIIGO_URL = "https://api.siigo.com/v1/purchases"
 def obtener_token():
     url = "https://api.siigo.com/auth"
     payload = {
-        "username": os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.club"),
-        "access_key": os.environ.get("ODVlMTk5MzQtOTllNS00YTFhLWIxYjEtOWZiOWIwYjM3MTYzOmc5M35oMyopRUI=", "")
+        "username": "administrativo@crewwellness.club",
+        "access_key": "YTE0YWRlOWYtZTA3MC00NGIyLWJiMDMtOTlmZDU0YTkyOWIzOjw2a3gyVTwsVk4="
     }
     response = requests.post(url, json=payload)
     print("AUTH STATUS:", response.status_code)
-    print("ACCESS_KEY LEÍDA:", os.environ.get("SIIGO_ACCESS_KEY", "❌ VACÍA")[:10])
     response.raise_for_status()
     token = response.json().get("access_token")
     if not token:
