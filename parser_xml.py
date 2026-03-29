@@ -39,21 +39,15 @@ def extraer_valor(root, paths):
     return 0
 
 def extraer_iva_real(invoice_root):
-    total_iva = 0
+    iva = invoice_root.find(
+        ".//cac:TaxTotal/cbc:TaxAmount",
+        NS
+    )
 
-    for tax_total in invoice_root.findall(".//cac:TaxTotal", NS):
-        percent = tax_total.find(".//cbc:Percent", NS)
-        tax_amount = tax_total.find(".//cbc:TaxAmount", NS)
+    if iva is not None and iva.text:
+        return round(float(iva.text), 2)
 
-        if percent is not None and tax_amount is not None:
-            try:
-                pct = float(percent.text)
-                if pct in [19, 5]:  # SOLO IVA válido
-                    total_iva += float(tax_amount.text)
-            except:
-                continue
-
-    return round(total_iva, 2)
+    return 0
 
 def extraer_totales(invoice_root):
     subtotal = extraer_valor(invoice_root, [
