@@ -13,7 +13,7 @@ def obtener_token():
     url = "https://api.siigo.com/auth"
     payload = {
         "username": os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.club"),
-        "access_key": os.environ.get("SIIGO_ACCES_KEY", "")
+        "access_key": os.environ.get("Nzg2NzVhMzItYzU3OC00NzE0LTlhYmMtOTA1M2JmZmYxNDJhOjRBVDdjVXk3JUs=", "")
     }
     response = requests.post(url, json=payload)
     print("AUTH STATUS:", response.status_code)
@@ -187,3 +187,4 @@ def debug_env():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
