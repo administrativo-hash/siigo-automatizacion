@@ -8,27 +8,16 @@ import os
 
 # 🔹 CONFIG SIIGO
 SIIGO_URL = "https://api.siigo.com/v1/purchases"
-SIIGO_USERNAME = os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.club")
-SIIGO_ACCESS_KEY = os.environ.get("SIIGO_ACCESS_KEY", "")  # ✅ nunca hardcodear
 
 def obtener_token():
     url = "https://api.siigo.com/auth"
     payload = {
-    "username": SIIGO_USERNAME,
-    "access_key": SIIGO_ACCESS_KEY
-}
+        "username": os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.club"),
+        "access_key": os.environ.get("SIIGO_ACCES_KEY", "")
+    }
     response = requests.post(url, json=payload)
     print("AUTH STATUS:", response.status_code)
-    print("ACCESS_KEY LEÍDA:", os.environ.get("SIIGO_ACCESS_KEY", "❌ VACÍA")[:10])
-    response.raise_for_status()
-    return response.json().get("access_token")
-    
-    # DEBUG TEMPORAL
-    print("AUTH STATUS:", response.status_code)
-    print("AUTH BODY:", response.text)
-    print("ACCESS_KEY LEÍDA:", SIIGO_ACCESS_KEY[:10] if SIIGO_ACCESS_KEY else "❌ VACÍA")
-    print("USERNAME LEÍDO:", SIIGO_USERNAME)
-    
+    print("ACCESS_KEY LEÍDA:", os.environ.get("SIIGO_ACCES_KEY", "❌ VACÍA")[:10])
     response.raise_for_status()
     token = response.json().get("access_token")
     if not token:
@@ -36,10 +25,10 @@ def obtener_token():
     return token
 
 def construir_headers():
-    token = obtener_token()  # ✅ token fresco en cada ejecución
+    token = obtener_token()
     return {
         "Authorization": f"Bearer {token}",
-        "Username": SIIGO_USERNAME,
+        "Username": os.environ.get("SIIGO_USERNAME", "administrativo@crewwellness.club"),
         "Content-Type": "application/json",
         "Partner-Id": "CrewWellnessAPI"
     }
@@ -50,17 +39,12 @@ def obtener_nit_desde_xml(xml_string):
         'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
         'cac': 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
     }
-
     root = ET.fromstring(xml_string.strip())
     desc = root.find('.//cac:Attachment/cac:ExternalReference/cbc:Description', ns)
-
     invoice_root = ET.fromstring(desc.text.strip()) if desc is not None and desc.text else root
-
     nit_raw = invoice_root.find(
         './/cac:AccountingSupplierParty//cbc:CompanyID', ns
     ).text.strip()
-
-    # ✅ quitar DV y dejar solo dígitos
     return re.sub(r'\D', '', nit_raw.split('-')[0])
 
 
@@ -76,25 +60,60 @@ def enviar_a_siigo(factura, xml_string):
 
     subtotal = round(factura["totales"]["subtotal"], 2)
     iva_total = round(factura["iva_total"], 2)
-    
-
-    # 🔹 payment = total (retenciones ya descontadas en el parser)
-    payment_correcto = round(subtotal + iva_total, 2)
+    payment_correcto = float(factura["totales"]["total_pagar"])
 
     print("DEBUG → NIT:", nit_real)
     print("DEBUG → SUBTOTAL (base):", subtotal)
     print("DEBUG → IVA XML:", iva_total)
     print("DEBUG → PAYMENT:", payment_correcto)
 
-    item = {
-        "code": "72057201",
-        "description": "Compra consolidada",
-        "quantity": 1,
-        "price": subtotal,  # ✅ base sin IVA
-        "type": "Account"
-    }
-    if iva_total > 0:
-        item["taxes"] = [{"id": 8326}]  # ⚠️ validar tax_id en tu cuenta SIIGO
+    # 🔹 CONSTRUCCIÓN DE ITEMS POR TARIFA
+    base = factura.get("base", {})
+    items = []
+
+    # IVA 19%
+    if base.get("19", 0) > 0:
+        items.append({
+            "code": "72057201",
+            "description": "Compra gravada 19%",
+            "quantity": 1,
+            "price": float(base["19"]),
+            "type": "Account",
+            "taxes": [{"id": 8326}]
+        })
+
+    # IVA 5%
+    if base.get("5", 0) > 0:
+        items.append({
+            "code": "72057201",
+            "description": "Compra gravada 5%",
+            "quantity": 1,
+            "price": float(base["5"]),
+            "type": "Account",
+            "taxes": [{"id": 8327}]
+        })
+
+    # EXCLUIDO / EXENTO
+    if base.get("0", 0) > 0:
+        items.append({
+            "code": "72057201",
+            "description": "Compra excluida",
+            "quantity": 1,
+            "price": float(base["0"]),
+            "type": "Account",
+            "taxes": [{"id": 14057}]
+        })
+
+    # Fallback si base no está definida
+    if not items:
+        items.append({
+            "code": "72057201",
+            "description": "Compra consolidada",
+            "quantity": 1,
+            "price": subtotal,
+            "type": "Account",
+            **({"taxes": [{"id": 8326}]} if iva_total > 0 else {})
+        })
 
     data = {
         "document": {"id": 15481},
@@ -107,7 +126,7 @@ def enviar_a_siigo(factura, xml_string):
             "identification": nit_real
         },
         "cost_center": 1132,
-        "items": [item],
+        "items": items,
         "payments": [
             {
                 "id": 20868,
@@ -117,7 +136,6 @@ def enviar_a_siigo(factura, xml_string):
         ]
     }
 
-    # ✅ token fresco en cada envío
     headers = construir_headers()
     response = requests.post(SIIGO_URL, json=data, headers=headers)
 
@@ -159,12 +177,13 @@ def home():
     return "OK"
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
 @app.route('/debug-env')
 def debug_env():
     return jsonify({
-        "SIIGO_ACCESS_KEY": os.environ.get("SIIGO_ACCESS_KEY", "❌ NO ENCONTRADA"),
+        "SIIGO_ACCES_KEY": os.environ.get("SIIGO_ACCES_KEY", "❌ NO ENCONTRADA")[:10],
         "SIIGO_USERNAME": os.environ.get("SIIGO_USERNAME", "❌ NO ENCONTRADA")
     })
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

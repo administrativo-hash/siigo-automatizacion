@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 import re
+from decimal import Decimal
 
 NS = {
     'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
@@ -108,4 +109,32 @@ def parsear_factura_xml(xml_string):
         "proveedor": {"nit": nit, "nombre": nombre},
         "totales": {"subtotal": subtotal, "total_pagar": total},
         "iva_total": iva_total
-    }
+}
+def extraer_bases_por_tarifa(invoice_root):
+
+    bases = {}
+
+    for line in invoice_root.findall(".//cac:InvoiceLine", NS):
+
+        base_el = line.find(".//cbc:LineExtensionAmount", NS)
+        if base_el is None or not base_el.text:
+            continue
+
+        base = Decimal(base_el.text)
+
+        percent_el = line.find(".//cac:TaxCategory/cbc:Percent", NS)
+
+        if percent_el is not None and percent_el.text:
+            tarifa = str(int(float(percent_el.text)))
+        else:
+            tarifa = "0"
+
+        if tarifa not in bases:
+            bases[tarifa] = Decimal("0.00")
+
+        bases[tarifa] += base
+
+    for t in ["19", "5", "0"]:
+        bases.setdefault(t, Decimal("0.00"))
+
+    return bases
