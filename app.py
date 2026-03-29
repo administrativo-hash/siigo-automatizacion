@@ -56,11 +56,18 @@ def enviar_a_siigo(factura, xml_string):
     match = re.match(r"([A-Za-z]*)(\d+)", numero_raw)
     prefijo = match.group(1) if match and match.group(1) else "FC"
     numero = int(match.group(2)) if match else 1
-
     subtotal = round(factura["totales"]["subtotal"], 2)
     iva_total = round(factura["iva_total"], 2)
-    payment_correcto = float(factura["totales"]["total_pagar"])
-
+    base = factura.get("base", {})
+    total_calculado = 0
+    # 19%
+    total_calculado += float(base.get("19", 0)) * 1.19
+    # 5%
+    total_calculado += float(base.get("5", 0)) * 1.05
+    # 0%
+    total_calculado += float(base.get("0", 0))
+    payment_correcto = round(total_calculado, 2)
+    
     print("DEBUG → NIT:", nit_real)
     print("DEBUG → SUBTOTAL (base):", subtotal)
     print("DEBUG → IVA XML:", iva_total)
