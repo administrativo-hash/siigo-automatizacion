@@ -59,8 +59,9 @@ def crear_proveedor_en_siigo(factura, nit_real, headers):
     nombre = factura["proveedor"]["nombre"]
     
     # Determinamos el código según longitud
-    es_empresa = len(nit_real) == 9 
+    es_empresa = len(nit_real) == 9 and nit_real[0] in ['8', '9'] 
     person_type = "Company" if es_empresa else "Person"
+    id_type_code = 31 if es_empresa else 13
     
     # ⚠️ IMPORTANTE: Siigo Customers suele esperar el ID como ENTERO en v1
     id_type_code = 31 if es_empresa else 13 
@@ -68,7 +69,7 @@ def crear_proveedor_en_siigo(factura, nit_real, headers):
     payload = {
         "type": "Supplier",
         "person_type": person_type,
-        "id_type": { "code": str(id_type_code) },
+        "id_type": { "code": id_type_code },  # entero: 31 o 13
         "identification": str(nit_real),
         "name": [nombre],
         "address": {
