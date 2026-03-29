@@ -17,7 +17,7 @@ def obtener_token():
     }
     response = requests.post(url, json=payload)
     print("AUTH STATUS:", response.status_code)
-    print("ACCESS_KEY LEÍDA:", os.environ.get("SIIGO_ACCES_KEY", "❌ VACÍA")[:10])
+    print("ACCESS_KEY LEÍDA:", os.environ.get("SIIGO_ACCESS_KEY", "❌ VACÍA")[:10])
     response.raise_for_status()
     token = response.json().get("access_token")
     if not token:
@@ -180,7 +180,7 @@ def home():
 @app.route('/debug-env')
 def debug_env():
     return jsonify({
-        "SIIGO_ACCES_KEY": os.environ.get("SIIGO_ACCES_KEY", "❌ NO ENCONTRADA")[:10],
+        "SIIGO_ACCESS_KEY": os.environ.get("SIIGO_ACCESS_KEY", "❌ NO ENCONTRADA")[:10],
         "SIIGO_USERNAME": os.environ.get("SIIGO_USERNAME", "❌ NO ENCONTRADA")
     })
 
