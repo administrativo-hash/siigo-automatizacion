@@ -76,15 +76,14 @@ def enviar_a_siigo(factura, xml_string):
 
     subtotal = round(factura["totales"]["subtotal"], 2)
     iva_total = round(factura["iva_total"], 2)
-    total = round(factura["totales"]["total_pagar"], 2)
+    
 
     # 🔹 payment = total (retenciones ya descontadas en el parser)
-    payment_correcto = total
+    payment_correcto = round(subtotal + iva_total, 2)
 
     print("DEBUG → NIT:", nit_real)
     print("DEBUG → SUBTOTAL (base):", subtotal)
     print("DEBUG → IVA XML:", iva_total)
-    print("DEBUG → TOTAL:", total)
     print("DEBUG → PAYMENT:", payment_correcto)
 
     item = {
