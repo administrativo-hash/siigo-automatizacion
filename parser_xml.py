@@ -76,31 +76,33 @@ def extraer_id_type(invoice_root):
     return "13"
 
 def parsear_factura_xml(xml_string):
-    invoice_root, _ = extraer_xml_interno(xml_string)
+    invoice_root, _, error_dian = extraer_xml_interno(xml_string)
+    if error_dian: return {"error": error_dian}
 
-    # Obtenemos datos financieros
-    subtotal, iva_total, total = extraer_totales(invoice_root)
+    # ESTA ES LA LÍNEA QUE CAUSABA EL ERROR (Ahora recibe 4 valores)
+    subtotal, iva_total, payable_xml, anticipo = extraer_totales(invoice_root)
+    
     bases = extraer_bases_por_tarifa(invoice_root)
 
-    # Extracción segura de textos para evitar AttributeError
     def get_txt(path, default=""):
         node = invoice_root.find(path, NS)
         return node.text.strip() if node is not None and node.text else default
 
     numero_factura = get_txt(".//cbc:ID", "1")
     fecha = get_txt(".//cbc:IssueDate", "2026-01-01")
-    
     nit_raw = get_txt(".//cac:AccountingSupplierParty//cbc:CompanyID", "000000000")
     nit = re.sub(r'\D', '', nit_raw.split('-')[0])
-
     nombre = get_txt(".//cac:AccountingSupplierParty//cbc:RegistrationName", "PROVEEDOR")
-    id_type = extraer_id_type(invoice_root).strip()
 
     return {
         "fecha": fecha,
         "numero_factura": numero_factura,
-        "proveedor": {"nit": nit, "nombre": nombre, "id_type": id_type },
-        "totales": {"subtotal": subtotal, "total_pagar": total},
+        "proveedor": {"nit": nit, "nombre": nombre},
+        "totales": {
+            "subtotal": subtotal, 
+            "total_pagar": payable_xml, # Valor original del XML
+            "anticipo": anticipo        # Nuevo valor enviado
+        },
         "iva_total": iva_total,
         "base": bases
     }
