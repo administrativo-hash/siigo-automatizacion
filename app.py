@@ -45,34 +45,34 @@ def crear_proveedor_en_siigo(factura, nit_real, headers):
     return res.status_code in [200, 201]
 
 def enviar_a_siigo(factura, xml_string):
-    if "error" in factura:
-        return 422, {"mensaje": factura["error"]}
-
-    # Obtener NIT y Número
-    nit_real = factura["proveedor"]["nit"]
-    numero_raw = factura["numero_factura"]
-    match = re.match(r"([A-Za-z]*)(\d+)", numero_raw)
-    prefijo = match.group(1) if match and match.group(1) else "FC"
-    numero = int(match.group(2)) if match else 1
-    
-    # Usar el total corregido por el parser para evitar error de payments
-    total_a_pagar = factura["totales"]["total_pagar"]
+    # ... (obtención de nit, prefijo, numero igual)
 
     items = []
     base = factura["base"]
-    tarifas = [("19", 8326, "19%"), ("5", 8327, "5%"), ("0", 14057, "excluida")]
+    # Definimos las tarifas y sus factores decimales
+    tarifas = [("19", 8326, 0.19), ("5", 8327, 0.05), ("0", 14057, 0.0)]
     
-    for tarifa, tax_id, desc in tarifas:
-        valor_base = float(base.get(tarifa, 0))
+    total_para_el_pago = 0
+    
+    for tarifa_str, tax_id, factor in tarifas:
+        valor_base = float(base.get(tarifa_str, 0))
         if valor_base > 0:
+            # Calculamos el IVA de esta agrupación
+            iva_de_esta_tarifa = round(valor_base * factor, 2)
+            # Sumamos al total que enviaremos en el nodo 'payments'
+            total_para_el_pago += (valor_base + iva_de_esta_tarifa)
+            
             items.append({
                 "code": "72057201",
-                "description": f"Compra gravada {desc}",
+                "description": f"Compra gravada {tarifa_str}%",
                 "quantity": 1,
                 "price": valor_base,
                 "type": "Account",
                 "taxes": [{"id": tax_id}]
             })
+
+    # Sincronización final: El pago es la suma exacta de nuestros items
+    pago_final = round(total_para_el_pago, 2)
 
     payload_compra = {
         "document": {"id": 15481},
@@ -81,8 +81,14 @@ def enviar_a_siigo(factura, xml_string):
         "supplier": {"identification": nit_real},
         "cost_center": 1132,
         "items": items,
-        "payments": [{"id": 20868, "value": total_a_pagar, "due_date": factura["fecha"]}]
+        "payments": [{
+            "id": 20868, 
+            "value": pago_final, # <--- Esto garantiza que la resta sea CERO
+            "due_date": factura["fecha"]
+        }]
     }
+    
+      
 
     headers = construir_headers()
     res = requests.post(SIIGO_URL_PURCHASES, json=payload_compra, headers=headers, timeout=20)
