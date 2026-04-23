@@ -58,7 +58,7 @@ def enviar_a_siigo(factura):
     config_impuestos = [
         ("19", 8326, 0.19),  # IVA 19%
         ("5", 8327, 0.05),   # IVA 5%
-        ("8", 8331, 0.08),   # INC 8% (El que necesita Pepos Cake)
+        ("8", 8341, 0.08),   # INC 8% (El que necesita Pepos Cake)
         ("0", 14057, 0.0)    # Exento
     ]
     
