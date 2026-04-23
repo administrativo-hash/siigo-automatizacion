@@ -51,27 +51,23 @@ def enviar_a_siigo(factura):
     numero = int(match.group(2)) if match else 1
     
     items = []
-    suma_pago = 0
-    base = factura["base"]
-    # Configuración de impuestos para Siigo
-    tarifas_config = [("19", 8326, 0.19), ("5", 8327, 0.05), ("0", 14057, 0.0)]
+    # Usamos el subtotal y el iva_total que el parser ya extrajo correctamente del XML
+    subtotal_total = factura["totales"]["subtotal"]
+    iva_total = factura.get("iva_total", 0) # El parser ya suma todos los impuestos aquí
     
-    for t_name, tax_id, factor in tarifas_config:
-        valor_base = float(base.get(t_name, 0))
-        if valor_base > 0:
-            iva_linea = round(valor_base * factor, 2)
-            suma_pago += (valor_base + iva_linea)
-            items.append({
-                "code": "72057201",
-                "description": f"Compra gravada {t_name}%",
-                "quantity": 1,
-                "price": valor_base,
-                "type": "Account",
-                "taxes": [{"id": tax_id}]
-            })
+    # Creamos un único ítem con el subtotal global para evitar líos de redondeo por línea
+    items.append({
+        "code": "72057201",
+        "description": "Compra de bienes y servicios (Procesado por API)",
+        "quantity": 1,
+        "price": subtotal_total,
+        "type": "Account",
+        "taxes": [{"id": 8326}] # Usamos el ID de IVA 19% como estándar o el que prefieras
+    })
 
-    # El pago se recalcula sumando Base + IVA de nuestros items para evitar error 400
-    pago_final = round(suma_pago, 2)
+    # IMPORTANTE: El pago debe ser la suma exacta de lo que Siigo calculará internamente.
+    # Como Siigo aplica el impuesto al "price", recalculamos el pago final:
+    pago_final = round(subtotal_total + iva_total, 2)
 
     payload = {
         "document": {"id": 15481},
@@ -86,6 +82,7 @@ def enviar_a_siigo(factura):
     headers = construir_headers()
     res = requests.post(SIIGO_URL_PURCHASES, json=payload, headers=headers, timeout=20)
     
+    # ... (lógica de reintento por proveedor nuevo se mantiene igual)
     if res.status_code == 400:
         if any(e.get("code") == "invalid_reference" for e in res.json().get("errors", [])):
             if crear_proveedor_en_siigo(factura, nit_real, headers):
