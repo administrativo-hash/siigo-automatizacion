@@ -53,7 +53,7 @@ def enviar_a_siigo(factura):
     items = []
     suma_pago = 0
     base = factura["base"]
-    # Tarifas: (Nombre XML, ID Siigo, Factor IVA)
+    # Configuración de impuestos para Siigo
     tarifas_config = [("19", 8326, 0.19), ("5", 8327, 0.05), ("0", 14057, 0.0)]
     
     for t_name, tax_id, factor in tarifas_config:
@@ -70,7 +70,7 @@ def enviar_a_siigo(factura):
                 "taxes": [{"id": tax_id}]
             })
 
-    # El pago se sincroniza con la suma de los items para evitar error 400
+    # El pago se recalcula sumando Base + IVA de nuestros items para evitar error 400
     pago_final = round(suma_pago, 2)
 
     payload = {
