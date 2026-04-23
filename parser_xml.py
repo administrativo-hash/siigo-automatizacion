@@ -54,27 +54,28 @@ def extraer_bases_por_tarifa(invoice_root):
     return bases
 
 def extraer_totales(invoice_root):
-    # Extraemos valores base
-    subtotal = extraer_valor(invoice_root, [".//cac:LegalMonetaryTotal/cbc:LineExtensionAmount"])
-    iva_total = extraer_iva_real(invoice_root)
+    # 1. Extraer los valores tal cual vienen en el XML (La fuente de verdad de Siigo)
+    subtotal_xml = extraer_valor(invoice_root, [".//cac:LegalMonetaryTotal/cbc:LineExtensionAmount"])
+    iva_total_xml = extraer_iva_real(invoice_root)
+    payable_amount_xml = extraer_valor(invoice_root, [".//cac:LegalMonetaryTotal/cbc:PayableAmount"])
+    anticipo_xml = extraer_valor(invoice_root, [".//cac:LegalMonetaryTotal/cbc:PrepaidAmount"])
     
-    # Validamos si existe anticipo (el problema con este proveedor)
-    anticipo = extraer_valor(invoice_root, [".//cac:LegalMonetaryTotal/cbc:PrepaidAmount"])
-    
-    if anticipo > 0:
-        # Si hay anticipo, recalculamos el total para que sea la deuda completa (Cuenta por Pagar)
-        total = round(subtotal + iva_total, 2)
+    # 2. LÓGICA INTELIGENTE:
+    # Si hay un anticipo significativo (> 1 peso), significa que es el proveedor del error.
+    # En ese caso, forzamos el cálculo de Cuenta por Pagar.
+    if anticipo_xml > 1.0:
+        total_final = round(subtotal_xml + iva_total_xml, 2)
+        print(f"ℹ️ Modo Corrección: Anticipo detectado ({anticipo_xml}). Total forzado: {total_final}")
     else:
-        total = extraer_valor(invoice_root, [".//cac:LegalMonetaryTotal/cbc:PayableAmount"])
+        # Si NO hay anticipo (como COMCEL o DOCUPRINT), usamos el PayableAmount original.
+        # Esto garantiza que Siigo reciba el valor exacto que espera.
+        total_final = payable_amount_xml
 
-    # Fallbacks de seguridad
-    if subtotal == 0 and total > 0:
-        subtotal = round(total - iva_total, 2)
-    if total == 0 and subtotal > 0:
-        total = round(subtotal + iva_total, 2)
+    # Validaciones de seguridad por si el XML viene vacío
+    if total_final == 0 and subtotal_xml > 0:
+        total_final = round(subtotal_xml + iva_total_xml, 2)
 
-    return round(subtotal, 2), round(iva_total, 2), round(total, 2)
-
+    return round(subtotal_xml, 2), round(iva_total_xml, 2), round(total_final, 2)
 def extraer_id_type(invoice_root):
     node = invoice_root.find(".//cac:AccountingSupplierParty//cac:PartyTaxScheme//cbc:CompanyID", NS)
     if node is not None:
