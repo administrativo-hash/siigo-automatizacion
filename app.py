@@ -80,7 +80,7 @@ def enviar_a_siigo(factura):
             })
 
     # El pago DEBE ser la suma exacta de base + impuestos que enviamos
-    pago_final = round(total_calculado_pago, 2)
+    pago_final = float(factura["totales"]["total_xml"])
 
     payload = {
         "document": {"id": 15481},
