@@ -53,36 +53,26 @@ def enviar_a_siigo(factura):
     items = []
     base = factura["base"]
     
-    # Mapeo de impuestos: (Nombre en XML, ID en Siigo, Factor)
-    # He agregado el ID 8331 que corresponde al Impuesto al Consumo (INC)
     config_impuestos = [
         ("19", 8326, 0.19),  # IVA 19%
         ("5", 8327, 0.05),   # IVA 5%
-        ("8", 8341, 0.08),   # INC 8% (El que necesita Pepos Cake)
+        ("8", 8341, 0.08),   # INC 8%
         ("0", 14057, 0.0)    # Exento
     ]
-    
-    total_calculado_pago = 0
     
     for t_nombre, tax_id, factor in config_impuestos:
         valor_base = float(base.get(t_nombre, 0))
         if valor_base > 0:
-            impuesto_valor = round(valor_base * factor, 2)
-            total_calculado_pago += (valor_base + impuesto_valor)
-            
             items.append({
                 "code": "72057201",
                 "description": f"Compra gravada {t_nombre}%",
                 "quantity": 1,
-                "price": valor_base,
+                "price": round(valor_base, 2),
                 "type": "Account",
                 "taxes": [{"id": tax_id}]
             })
 
-    # El pago DEBE ser la suma exacta de base + impuestos que enviamos
-    #pago_final = float(factura["totales"]["total_xml"])
-
-    # Cambia tu línea actual por esta:
+    # Valor inicial desde el XML
     pago_final = round(float(factura["totales"]["total_xml"]), 2)
     
     payload = {
@@ -96,13 +86,40 @@ def enviar_a_siigo(factura):
     }
 
     headers = construir_headers()
+    
+    # --- PRIMER INTENTO ---
     res = requests.post(SIIGO_URL_PURCHASES, json=payload, headers=headers, timeout=20)
     
-    # Manejo de Proveedor Nuevo
+    # --- SOLUCIÓN DINÁMICA PARA DIFERENCIA DE DECIMALES ---
     if res.status_code == 400:
         res_json = res.json()
-        if any(e.get("code") == "invalid_reference" for e in res_json.get("errors", [])):
+        # Siigo anida los errores en la llave 'siigo'
+        errores = res_json.get("siigo", {}).get("errors", [])
+        if not errores: errores = res_json.get("errors", []) # Por si cambia el formato
+        
+        for error in errores:
+            if error.get("code") == "invalid_total_payments":
+                mensaje_error = error.get("message", "")
+                # Buscamos el valor calculado por Siigo al final del mensaje (ej: 717800.02)
+                match_decimal = re.search(r"(\d+\.\d+)$", mensaje_error)
+                if match_decimal:
+                    nuevo_valor = float(match_decimal.group(1))
+                    print(f"Ajuste de centavos detectado: Cambiando {pago_final} por {nuevo_valor}")
+                    payload["payments"][0]["value"] = nuevo_valor
+                    # Reintento con el valor que Siigo exige
+                    res = requests.post(SIIGO_URL_PURCHASES, json=payload, headers=headers, timeout=20)
+                    break
+
+    # --- MANEJO DE PROVEEDOR NUEVO (Si el error persiste o es nuevo) ---
+    if res.status_code == 400:
+        res_json = res.json()
+        errores = res_json.get("siigo", {}).get("errors", [])
+        if not errores: errores = res_json.get("errors", [])
+        
+        if any(e.get("code") == "invalid_reference" for e in errores):
+            print(f"Proveedor {nit_real} no existe. Creando...")
             if crear_proveedor_en_siigo(factura, nit_real, headers):
+                # Reintento final después de crear el proveedor
                 res = requests.post(SIIGO_URL_PURCHASES, json=payload, headers=headers, timeout=20)
     
     return res.status_code, res.json()
@@ -110,10 +127,15 @@ def enviar_a_siigo(factura):
 @app.route('/xml', methods=['POST'])
 def recibir_xml():
     try:
-        factura = parsear_factura_xml(request.json.get("xml", ""))
+        xml_data = request.json.get("xml", "")
+        if not xml_data:
+            return jsonify({"status": "error", "mensaje": "No se recibió XML"}), 400
+            
+        factura = parsear_factura_xml(xml_data)
         status, respuesta = enviar_a_siigo(factura)
         return jsonify({"status": "ok" if status < 300 else "error", "siigo": respuesta}), status
     except Exception as e:
+        print(f"Error procesando petición: {str(e)}")
         return jsonify({"status": "error", "mensaje": str(e)}), 500
 
 if __name__ == "__main__":
