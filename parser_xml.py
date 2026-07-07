@@ -52,24 +52,28 @@ def extraer_iva_real(invoice_root):
 def extraer_bases_por_tarifa(invoice_root):
     bases = {}
 
-    for tax_subtotal in invoice_root.findall(".//cac:TaxSubtotal", NS):
-        taxable_el = tax_subtotal.find("cbc:TaxableAmount", NS)
-        percent_el = tax_subtotal.find(".//cac:TaxCategory/cbc:Percent", NS)
+    # IMPORTANTE:
+    # Solo tomar los TaxSubtotal del TaxTotal principal de la factura,
+    # no los TaxSubtotal internos de cada línea.
+    for tax_total in invoice_root.findall("./cac:TaxTotal", NS):
+        for tax_subtotal in tax_total.findall("./cac:TaxSubtotal", NS):
+            taxable_el = tax_subtotal.find("cbc:TaxableAmount", NS)
+            percent_el = tax_subtotal.find(".//cac:TaxCategory/cbc:Percent", NS)
 
-        if taxable_el is None or not taxable_el.text:
-            continue
+            if taxable_el is None or not taxable_el.text:
+                continue
 
-        base = Decimal(taxable_el.text)
+            base = Decimal(taxable_el.text)
 
-        if percent_el is not None and percent_el.text:
-            tarifa = str(int(Decimal(percent_el.text)))
-        else:
-            tarifa = "0"
+            if percent_el is not None and percent_el.text:
+                tarifa = str(int(Decimal(percent_el.text)))
+            else:
+                tarifa = "0"
 
-        if tarifa not in bases:
-            bases[tarifa] = Decimal("0.00")
+            if tarifa not in bases:
+                bases[tarifa] = Decimal("0.00")
 
-        bases[tarifa] += base
+            bases[tarifa] += base
 
     for tarifa in list(bases.keys()):
         bases[tarifa] = redondear(bases[tarifa])
