@@ -10,7 +10,7 @@ AUTH_URL = "https://api.siigo.com/auth"
 SIIGO_URL_PURCHASES = "https://api.siigo.com/v1/purchases"
 SIIGO_URL_CUSTOMERS = "https://api.siigo.com/v1/customers"
 USERNAME = "administrativo@crewwellness.club"
-ACCESS_KEY = "YTE0YWRlOWYtZTA3MC00NGIyLWJiMDMtOTlmZDU0YTkyOWIzOjw2a3gyVTwsVk4"
+ACCESS_KEY = "YTE0YWRlOWYtZTA3MC00NGIyLWJiMDMtOTlmZDU0YTkyOWIzOjw2a3gyVTwsVk4="
 
 DOCUMENT_ID = 15481
 COST_CENTER_ID = 1132
