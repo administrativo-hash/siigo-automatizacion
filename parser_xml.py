@@ -11,7 +11,6 @@ def extraer_xml_interno(xml_string):
     except ET.ParseError:
         return None, None, "Error crítico: El XML principal está malformado o truncado."
 
-    # Buscamos usando el comodín {*} que ignora los namespaces en ElementTree
     desc = root.find(".//{*}Attachment/{*}ExternalReference/{*}Description")
 
     if desc is not None and desc.text:
@@ -74,30 +73,6 @@ def extraer_bases_por_tarifa(invoice_root):
 
     return bases
 
-def extraer_totales(invoice_root):
-    line_extension = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}LineExtensionAmount')
-    tax_exclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxExclusiveAmount')
-    tax_inclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxInclusiveAmount')
-    payable = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PayableAmount')
-    anticipo = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PrepaidAmount')
-    charge_total = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}ChargeTotalAmount')
-    allowance_total = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}AllowanceTotalAmount')
-    rounding = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PayableRoundingAmount')
-
-    iva = extraer_iva_real(invoice_root)
-
-    return {
-        "line_extension": float(redondear(line_extension)),
-        "tax_exclusive": float(redondear(tax_exclusive)),
-        "tax_inclusive": float(redondear(tax_inclusive)),
-        "iva": float(redondear(iva)),
-        "total_xml": float(redondear(payable)),
-        "anticipo": float(redondear(anticipo)),
-        "charge_total": float(redondear(charge_total)),
-        "allowance_total": float(redondear(allowance_total)),
-        "rounding": float(redondear(rounding)),
-    }
-
 def ajustar_base_cero(invoice_root, bases):
     line_extension = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}LineExtensionAmount')
     suma_bases = sum(bases.values(), Decimal("0.00"))
@@ -130,6 +105,47 @@ def ajustar_bases_con_total_pagable(bases, totales):
 
     return bases
 
+def extraer_totales(invoice_root, bases=None):
+    line_extension = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}LineExtensionAmount')
+    tax_exclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxExclusiveAmount')
+    tax_inclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxInclusiveAmount')
+    payable = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PayableAmount')
+    anticipo = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PrepaidAmount')
+    charge_total = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}ChargeTotalAmount')
+    allowance_total = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}AllowanceTotalAmount')
+    rounding = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PayableRoundingAmount')
+
+    iva = extraer_iva_real(invoice_root)
+
+    # Calculamos dinámicamente el total exacto que esperará la API de Siigo
+    if bases:
+        base_19 = Decimal(str(bases.get("19", 0)))
+        base_5 = Decimal(str(bases.get("5", 0)))
+        base_8 = Decimal(str(bases.get("8", 0)))
+        base_0 = Decimal(str(bases.get("0", 0)))
+        
+        total_siigo = redondear(
+            (base_19 * Decimal("1.19")) +
+            (base_5 * Decimal("1.05")) +
+            (base_8 * Decimal("1.08")) +
+            base_0
+        )
+    else:
+        total_siigo = payable
+
+    return {
+        "line_extension": float(redondear(line_extension)),
+        "tax_exclusive": float(redondear(tax_exclusive)),
+        "tax_inclusive": float(redondear(tax_inclusive)),
+        "iva": float(redondear(iva)),
+        "total_xml": float(redondear(payable)),
+        "total_siigo": float(redondear(total_siigo)),
+        "anticipo": float(redondear(anticipo)),
+        "charge_total": float(redondear(charge_total)),
+        "allowance_total": float(redondear(allowance_total)),
+        "rounding": float(redondear(rounding)),
+    }
+
 def parsear_factura_xml(xml_string):
     invoice_root, _, error_dian = extraer_xml_interno(xml_string)
 
@@ -139,16 +155,19 @@ def parsear_factura_xml(xml_string):
     if invoice_root is None:
         return {"error": "No se pudo procesar el archivo por estructura XML inválida."}
 
-    totales = extraer_totales(invoice_root)
+    # Inicializamos totales base primero
+    totales_temp = extraer_totales(invoice_root)
     bases = extraer_bases_por_tarifa(invoice_root)
     bases = ajustar_base_cero(invoice_root, bases)
-    bases = ajustar_bases_con_total_pagable(bases, totales)
+    bases = ajustar_bases_con_total_pagable(bases, totales_temp)
+    
+    # Recalculamos los totales inyectando las bases finales para obtener el "total_siigo" idéntico a su backend
+    totales = extraer_totales(invoice_root, bases)
 
     def get_txt(path, default=""):
         node = invoice_root.find(path)
         return node.text.strip() if node is not None and node.text else default
 
-    # Sintaxis nativa de ElementTree utilizando el comodín {*} para ignorar namespaces
     nit_raw = get_txt('.//{*}AccountingSupplierParty//{*}CompanyID', "000000000")
     fecha = get_txt('.//{*}IssueDate', "2026-01-01")
     numero_factura = get_txt('.//{*}ID', "1")
