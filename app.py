@@ -128,7 +128,7 @@ def enviar_a_siigo(factura):
     numero = int(match.group(2)) if match else 1
 
     items = construir_items(factura)
-    pago_final = round(float(factura["totales"]["total_xml"]), 2)
+    pago_final = round(float(factura["totales"]["total_siigo"]), 2)
 
     if not items:
         return 422, {
