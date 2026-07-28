@@ -74,6 +74,12 @@ def extraer_bases_por_tarifa(invoice_root):
     return bases
 
 def ajustar_base_cero(invoice_root, bases):
+    """
+    Agrega a la base '0' la diferencia entre LineExtensionAmount y la suma de
+    las bases gravadas: esto corresponde a bienes/servicios excluidos, no
+    gravados, o cargos legítimos de la factura. Esta diferencia SIEMPRE debe
+    ser >= 0 (nunca es un ajuste artificial de redondeo).
+    """
     line_extension = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}LineExtensionAmount')
     suma_bases = sum(bases.values(), Decimal("0.00"))
     diferencia = redondear(line_extension - suma_bases)
@@ -83,29 +89,35 @@ def ajustar_base_cero(invoice_root, bases):
 
     return bases
 
-def ajustar_bases_con_total_pagable(bases, totales):
-    total_xml = Decimal(str(totales.get("total_xml", 0)))
+def calcular_total_siigo(bases):
+    """
+    Replica EXACTAMENTE la fórmula que Siigo va a aplicar sobre los items que
+    realmente se le envían (base x tarifa, redondeado). Este valor -y NO el
+    PayableAmount legal del XML- es el que debe ir en payments.value, porque
+    payments debe cuadrar con lo que Siigo recalcula a partir de "items",
+    no con el total del documento DIAN.
 
+    IMPORTANTE: aquí NO se fuerza a que este total coincida con el
+    PayableAmount del XML. Antes se intentaba "corregir" la diferencia
+    inyectando una base "0" negativa, pero Siigo rechaza montos negativos
+    en items (error invalid_amount / "discount amount is invalid"). La
+    diferencia de centavos que pueda quedar contra el total legal del XML
+    es inevitable (redondeo de Siigo por base consolidada vs redondeo del
+    proveedor línea por línea) y es inmaterial para efectos contables.
+    """
     base_19 = Decimal(str(bases.get("19", 0)))
     base_5 = Decimal(str(bases.get("5", 0)))
     base_8 = Decimal(str(bases.get("8", 0)))
     base_0 = Decimal(str(bases.get("0", 0)))
 
-    # Simulación exacta de lo que Siigo calculará con sus redondeos por línea consolidada
     iva_19 = redondear(base_19 * Decimal("0.19"))
     iva_5 = redondear(base_5 * Decimal("0.05"))
     iva_8 = redondear(base_8 * Decimal("0.08"))
 
-    total_calculado = base_19 + iva_19 + base_5 + iva_5 + base_8 + iva_8 + base_0
+    total_siigo = base_19 + iva_19 + base_5 + iva_5 + base_8 + iva_8 + base_0
+    return redondear(total_siigo)
 
-    diferencia = redondear(total_xml - total_calculado)
-
-    if diferencia != 0:
-        bases["0"] = redondear(base_0 + diferencia)
-
-    return bases
-
-def extraer_totales(invoice_root, bases=None):
+def extraer_totales(invoice_root, bases):
     line_extension = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}LineExtensionAmount')
     tax_exclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxExclusiveAmount')
     tax_inclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxInclusiveAmount')
@@ -116,29 +128,18 @@ def extraer_totales(invoice_root, bases=None):
     rounding = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PayableRoundingAmount')
 
     iva = extraer_iva_real(invoice_root)
-
-    if bases:
-        base_19 = Decimal(str(bases.get("19", 0)))
-        base_5 = Decimal(str(bases.get("5", 0)))
-        base_8 = Decimal(str(bases.get("8", 0)))
-        base_0 = Decimal(str(bases.get("0", 0)))
-        
-        # Esta es exactamente la fórmula que Siigo ejecuta al procesar el JSON de app.py
-        iva_19 = redondear(base_19 * Decimal("0.19"))
-        iva_5 = redondear(base_5 * Decimal("0.05"))
-        iva_8 = redondear(base_8 * Decimal("0.08"))
-        
-        total_siigo = base_19 + iva_19 + base_5 + iva_5 + base_8 + iva_8 + base_0
-    else:
-        total_siigo = payable
+    total_siigo = calcular_total_siigo(bases)
+    payable_redondeado = redondear(payable)
 
     return {
         "line_extension": float(redondear(line_extension)),
         "tax_exclusive": float(redondear(tax_exclusive)),
         "tax_inclusive": float(redondear(tax_inclusive)),
         "iva": float(redondear(iva)),
-        "total_xml": float(redondear(payable)),
-        "total_siigo": float(redondear(total_siigo)),
+        "total_xml": float(payable_redondeado),
+        "total_siigo": float(total_siigo),
+        # Solo informativo / para monitoreo, no se usa para construir el payload
+        "diferencia_vs_xml": float(redondear(total_siigo - payable_redondeado)),
         "anticipo": float(redondear(anticipo)),
         "charge_total": float(redondear(charge_total)),
         "allowance_total": float(redondear(allowance_total)),
@@ -150,15 +151,13 @@ def parsear_factura_xml(xml_string):
 
     if error_dian:
         return {"error": error_dian}
-        
+
     if invoice_root is None:
         return {"error": "No se pudo procesar el archivo por estructura XML inválida."}
 
-    totales_temp = extraer_totales(invoice_root)
     bases = extraer_bases_por_tarifa(invoice_root)
     bases = ajustar_base_cero(invoice_root, bases)
-    bases = ajustar_bases_con_total_pagable(bases, totales_temp)
-    
+
     totales = extraer_totales(invoice_root, bases)
 
     def get_txt(path, default=""):

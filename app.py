@@ -106,13 +106,13 @@ def construir_items(factura):
 
     valor_base_0 = round(float(bases.get("0", 0)), 2)
 
-    # FIX: antes era "if valor_base_0 > 0:". El ajuste de redondeo que calcula
-    # ajustar_bases_con_total_pagable() en parser_xml.py puede ser NEGATIVO
-    # (por ejemplo -0.01, -0.35, -0.67), y con "> 0" ese ítem se descartaba
-    # silenciosamente. Eso hacía que "payments" (que sí incluye el ajuste)
-    # no coincidiera con el total que Siigo recalcula a partir de "items"
-    # (que no lo incluía), disparando el error invalid_total_payments.
-    if valor_base_0 != 0:
+    # NOTA: parser_xml.py ya NO genera ajustes negativos de redondeo en la
+    # base "0" (esa lógica se eliminó porque Siigo rechaza precios negativos
+    # en items con "invalid_amount" / discount inválido). La base "0" ahora
+    # solo contiene bienes/servicios realmente excluidos o no gravados de la
+    # factura, que siempre son >= 0, así que esta condición puede quedarse
+    # tal cual (> 0).
+    if valor_base_0 > 0:
         items.append({
             "code": ACCOUNT_CODE,
             "description": "Compra no gravada / excluida / cargos / redondeos",
