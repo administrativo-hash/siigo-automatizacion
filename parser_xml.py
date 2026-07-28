@@ -2,22 +2,24 @@ import xml.etree.ElementTree as ET
 import re
 from decimal import Decimal, ROUND_HALF_UP
 
-NS = {
-    "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
-    "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
-}
-
 def redondear(valor):
     return Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 def extraer_xml_interno(xml_string):
-    root = ET.fromstring(xml_string.strip().lstrip("\ufeff"))
+    try:
+        root = ET.fromstring(xml_string.strip().lstrip("\ufeff"))
+    except ET.ParseError:
+        return None, None, "Error crítico: El XML principal está malformado o truncado."
 
-    desc = root.find(".//cac:Attachment/cac:ExternalReference/cbc:Description", NS)
+    # Buscamos usando el comodín {*} que ignora los namespaces en ElementTree
+    desc = root.find(".//{*}Attachment/{*}ExternalReference/{*}Description")
 
     if desc is not None and desc.text:
-        xml_limpio = desc.text.strip().lstrip("\ufeff")
-        interno_root = ET.fromstring(xml_limpio)
+        try:
+            xml_limpio = desc.text.strip().lstrip("\ufeff")
+            interno_root = ET.fromstring(xml_limpio)
+        except ET.ParseError:
+            return root, root, "Error crítico: El XML interno de la factura está incompleto o truncado."
 
         responses = interno_root.findall(".//{*}ResponseCode")
         for r in responses:
@@ -28,35 +30,29 @@ def extraer_xml_interno(xml_string):
 
     return root, root, None
 
-def extraer_valor(root, paths):
-    for path in paths:
-        el = root.find(path, NS)
-        if el is not None and el.text:
-            try:
-                return Decimal(el.text)
-            except Exception:
-                continue
+def extraer_valor(root, xpath_expr):
+    el = root.find(xpath_expr)
+    if el is not None and el.text:
+        try:
+            return Decimal(el.text)
+        except Exception:
+            return Decimal("0.00")
     return Decimal("0.00")
 
 def extraer_iva_real(invoice_root):
     iva = Decimal("0.00")
-
-    # Solo TaxTotal principal, no los TaxTotal internos de cada línea
-    for tax_total in invoice_root.findall("./cac:TaxTotal", NS):
-        tax_amount = tax_total.find("cbc:TaxAmount", NS)
+    for tax_total in invoice_root.findall("./{*}TaxTotal"):
+        tax_amount = tax_total.find("./{*}TaxAmount")
         if tax_amount is not None and tax_amount.text:
             iva += Decimal(tax_amount.text)
-
     return redondear(iva)
 
 def extraer_bases_por_tarifa(invoice_root):
     bases = {}
-
-    # Solo TaxSubtotal del TaxTotal principal de la factura
-    for tax_total in invoice_root.findall("./cac:TaxTotal", NS):
-        for tax_subtotal in tax_total.findall("./cac:TaxSubtotal", NS):
-            taxable_el = tax_subtotal.find("cbc:TaxableAmount", NS)
-            percent_el = tax_subtotal.find(".//cac:TaxCategory/cbc:Percent", NS)
+    for tax_total in invoice_root.findall("./{*}TaxTotal"):
+        for tax_subtotal in tax_total.findall("./{*}TaxSubtotal"):
+            taxable_el = tax_subtotal.find("./{*}TaxableAmount")
+            percent_el = tax_subtotal.find(".//{*}TaxCategory/{*}Percent")
 
             if taxable_el is None or not taxable_el.text:
                 continue
@@ -79,37 +75,14 @@ def extraer_bases_por_tarifa(invoice_root):
     return bases
 
 def extraer_totales(invoice_root):
-    line_extension = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:LineExtensionAmount"
-    ])
-
-    tax_exclusive = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount"
-    ])
-
-    tax_inclusive = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount"
-    ])
-
-    payable = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:PayableAmount"
-    ])
-
-    anticipo = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:PrepaidAmount"
-    ])
-
-    charge_total = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:ChargeTotalAmount"
-    ])
-
-    allowance_total = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount"
-    ])
-
-    rounding = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:PayableRoundingAmount"
-    ])
+    line_extension = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}LineExtensionAmount')
+    tax_exclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxExclusiveAmount')
+    tax_inclusive = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}TaxInclusiveAmount')
+    payable = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PayableAmount')
+    anticipo = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PrepaidAmount')
+    charge_total = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}ChargeTotalAmount')
+    allowance_total = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}AllowanceTotalAmount')
+    rounding = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}PayableRoundingAmount')
 
     iva = extraer_iva_real(invoice_root)
 
@@ -126,10 +99,7 @@ def extraer_totales(invoice_root):
     }
 
 def ajustar_base_cero(invoice_root, bases):
-    line_extension = extraer_valor(invoice_root, [
-        ".//cac:LegalMonetaryTotal/cbc:LineExtensionAmount"
-    ])
-
+    line_extension = extraer_valor(invoice_root, './/{*}LegalMonetaryTotal/{*}LineExtensionAmount')
     suma_bases = sum(bases.values(), Decimal("0.00"))
     diferencia = redondear(line_extension - suma_bases)
 
@@ -165,6 +135,9 @@ def parsear_factura_xml(xml_string):
 
     if error_dian:
         return {"error": error_dian}
+        
+    if invoice_root is None:
+        return {"error": "No se pudo procesar el archivo por estructura XML inválida."}
 
     totales = extraer_totales(invoice_root)
     bases = extraer_bases_por_tarifa(invoice_root)
@@ -172,20 +145,21 @@ def parsear_factura_xml(xml_string):
     bases = ajustar_bases_con_total_pagable(bases, totales)
 
     def get_txt(path, default=""):
-        node = invoice_root.find(path, NS)
+        node = invoice_root.find(path)
         return node.text.strip() if node is not None and node.text else default
 
-    nit_raw = get_txt(".//cac:AccountingSupplierParty//cbc:CompanyID", "000000000")
+    # Sintaxis nativa de ElementTree utilizando el comodín {*} para ignorar namespaces
+    nit_raw = get_txt('.//{*}AccountingSupplierParty//{*}CompanyID', "000000000")
+    fecha = get_txt('.//{*}IssueDate', "2026-01-01")
+    numero_factura = get_txt('.//{*}ID', "1")
+    nombre_proveedor = get_txt('.//{*}AccountingSupplierParty//{*}RegistrationName', "PROVEEDOR")
 
     return {
-        "fecha": get_txt(".//cbc:IssueDate", "2026-01-01"),
-        "numero_factura": get_txt(".//cbc:ID", "1"),
+        "fecha": fecha,
+        "numero_factura": numero_factura,
         "proveedor": {
             "nit": re.sub(r"\D", "", nit_raw.split("-")[0]),
-            "nombre": get_txt(
-                ".//cac:AccountingSupplierParty//cbc:RegistrationName",
-                "PROVEEDOR"
-            ),
+            "nombre": nombre_proveedor,
         },
         "totales": totales,
         "base": bases,
