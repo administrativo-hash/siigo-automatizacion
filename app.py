@@ -128,6 +128,8 @@ def enviar_a_siigo(factura):
     numero = int(match.group(2)) if match else 1
 
     items = construir_items(factura)
+    
+    # Aquí se utiliza el total con la matemática idéntica de Siigo
     pago_final = round(float(factura["totales"]["total_siigo"]), 2)
 
     if not items:

@@ -91,12 +91,12 @@ def ajustar_bases_con_total_pagable(bases, totales):
     base_8 = Decimal(str(bases.get("8", 0)))
     base_0 = Decimal(str(bases.get("0", 0)))
 
-    total_calculado = redondear(
-        (base_19 * Decimal("1.19")) +
-        (base_5 * Decimal("1.05")) +
-        (base_8 * Decimal("1.08")) +
-        base_0
-    )
+    # Simulación exacta de lo que Siigo calculará con sus redondeos por línea consolidada
+    iva_19 = redondear(base_19 * Decimal("0.19"))
+    iva_5 = redondear(base_5 * Decimal("0.05"))
+    iva_8 = redondear(base_8 * Decimal("0.08"))
+
+    total_calculado = base_19 + iva_19 + base_5 + iva_5 + base_8 + iva_8 + base_0
 
     diferencia = redondear(total_xml - total_calculado)
 
@@ -117,19 +117,18 @@ def extraer_totales(invoice_root, bases=None):
 
     iva = extraer_iva_real(invoice_root)
 
-    # Calculamos dinámicamente el total exacto que esperará la API de Siigo
     if bases:
         base_19 = Decimal(str(bases.get("19", 0)))
         base_5 = Decimal(str(bases.get("5", 0)))
         base_8 = Decimal(str(bases.get("8", 0)))
         base_0 = Decimal(str(bases.get("0", 0)))
         
-        total_siigo = redondear(
-            (base_19 * Decimal("1.19")) +
-            (base_5 * Decimal("1.05")) +
-            (base_8 * Decimal("1.08")) +
-            base_0
-        )
+        # Esta es exactamente la fórmula que Siigo ejecuta al procesar el JSON de app.py
+        iva_19 = redondear(base_19 * Decimal("0.19"))
+        iva_5 = redondear(base_5 * Decimal("0.05"))
+        iva_8 = redondear(base_8 * Decimal("0.08"))
+        
+        total_siigo = base_19 + iva_19 + base_5 + iva_5 + base_8 + iva_8 + base_0
     else:
         total_siigo = payable
 
@@ -155,13 +154,11 @@ def parsear_factura_xml(xml_string):
     if invoice_root is None:
         return {"error": "No se pudo procesar el archivo por estructura XML inválida."}
 
-    # Inicializamos totales base primero
     totales_temp = extraer_totales(invoice_root)
     bases = extraer_bases_por_tarifa(invoice_root)
     bases = ajustar_base_cero(invoice_root, bases)
     bases = ajustar_bases_con_total_pagable(bases, totales_temp)
     
-    # Recalculamos los totales inyectando las bases finales para obtener el "total_siigo" idéntico a su backend
     totales = extraer_totales(invoice_root, bases)
 
     def get_txt(path, default=""):
